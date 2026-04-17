@@ -1,4 +1,5 @@
-import { useEffect, useState, ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import {
   Avatar,
   Box,
@@ -23,8 +24,10 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
 import api from '../../services/api';
@@ -33,6 +36,7 @@ import type { Hospital } from '../../dtos';
 type FormState = Partial<Hospital> & { [key: string]: any };
 
 export default function Hospitals() {
+  const navigate = useNavigate();
   const { current } = useEnterprise();
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(false);
@@ -173,6 +177,15 @@ export default function Hospitals() {
                     <TableCell>{h.adminFee != null ? `${h.adminFee}%` : '—'}</TableCell>
                     <TableCell>{h.min_hours != null ? `${h.min_hours}h` : '—'}</TableCell>
                     <TableCell>
+                      <Tooltip title="Ver detalhes">
+                        <IconButton
+                          size="small"
+                          sx={{ color: '#1a6b4a' }}
+                          onClick={() => navigate(`/hospitais/${h.id}`)}
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Editar">
                         <IconButton size="small" onClick={() => openEdit(h)}>
                           <EditIcon fontSize="small" />

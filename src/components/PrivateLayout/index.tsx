@@ -1,6 +1,6 @@
 import { Box } from '@mui/material';
 import { Sidebar } from '../Sidebar';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;

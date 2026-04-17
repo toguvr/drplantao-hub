@@ -10,6 +10,7 @@ import { EnterpriseProvider } from './contexts/EnterpriseContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Hospitals from './pages/Hospitals';
+import HospitalDetail from './pages/HospitalDetail';
 import Users from './pages/Users';
 import Financial from './pages/Financial';
 
@@ -40,6 +41,14 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <Hospitals />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/hospitais/:id"
+        element={
+          <PrivateRoute>
+            <HospitalDetail />
           </PrivateRoute>
         }
       />

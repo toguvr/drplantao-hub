@@ -12,6 +12,7 @@ import EventNoteIcon from '@mui/icons-material/EventNote';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
 import api from '../../services/api';
@@ -58,11 +59,13 @@ function KPICard({
 }
 
 function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
+  const navigate = useNavigate();
   const balance = hospital.total_income - hospital.total_outcome;
 
   return (
     <Paper
       elevation={0}
+      onClick={() => navigate(`/hospitais/${hospital.id}`)}
       sx={{
         p: 2,
         border: '1px solid #e8eef2',
@@ -70,6 +73,9 @@ function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
         display: 'flex',
         alignItems: 'center',
         gap: 2,
+        cursor: 'pointer',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+        '&:hover': { borderColor: '#1a6b4a', boxShadow: '0 2px 8px rgba(26,107,74,0.12)' },
       }}
     >
       <Avatar

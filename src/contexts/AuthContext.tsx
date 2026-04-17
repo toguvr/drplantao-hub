@@ -1,10 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-  ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useState } from 'react';
+import type { ReactNode } from 'react';
 import api from '../services/api';
 import type { User } from '../dtos';
 
