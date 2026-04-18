@@ -43,16 +43,25 @@ export interface HospitalSummary extends Hospital {
   total_appointments: number;
   total_income: number;
   total_outcome: number;
+  month_appointments: number;
+  month_income: number;
+  month_outcome: number;
 }
 
 export interface EnterpriseHub {
   enterprise_id: string;
   title: string;
   logo_url?: string;
+  month: string; // YYYY-MM
   hospitals_count: number;
   total_appointments: number;
   total_income: number;
   total_outcome: number;
+  month_appointments: number;
+  month_income: number;
+  month_outcome: number;
+  active_doctors: number;
+  avg_cost_per_appointment: number;
   hospitals: HospitalSummary[];
 }
 
