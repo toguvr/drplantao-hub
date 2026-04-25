@@ -31,14 +31,13 @@ import { toast } from 'react-toastify';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBrand } from '../../hooks/useBrand';
 import api from '../../services/api';
 import type { UserEnterprise } from '../../dtos';
 
-// ─── Tokens ──────────────────────────────────────────────────────────────────
+// ─── Tokens (universais) ─────────────────────────────────────────────────────
 
 const C = {
-  green: '#1a6b4a',
-  greenSoft: '#e8f5ee',
   blue: '#1565c0',
   blueSoft: '#e3f2fd',
   red: '#dc2626',
@@ -50,31 +49,35 @@ const C = {
 
 type Role = 'org_admin' | 'org_viewer';
 
-const ROLE_META: Record<Role, {
-  label: string; tag: string; description: string;
+interface RoleMeta {
+  label: string; description: string;
   bg: string; fg: string; Icon: typeof VerifiedUserIcon;
-}> = {
-  org_admin: {
-    label: 'Admin',
-    tag: 'Administrador da organização',
-    description: 'Pode editar a organização, gerenciar hospitais e adicionar/remover membros.',
-    bg: C.greenSoft,
-    fg: C.green,
-    Icon: VerifiedUserIcon,
-  },
-  org_viewer: {
-    label: 'Visualizador',
-    tag: 'Acesso somente leitura',
-    description: 'Visualiza dados consolidados e detalhe dos hospitais. Não altera nada.',
-    bg: C.blueSoft,
-    fg: C.blue,
-    Icon: VisibilityIcon,
-  },
-};
+}
+
+function useRoleMeta(): Record<Role, RoleMeta> {
+  const brand = useBrand();
+  return {
+    org_admin: {
+      label: 'Admin',
+      description: 'Pode editar a organização, gerenciar hospitais e adicionar/remover membros.',
+      bg: brand.primarySoft,
+      fg: brand.primary,
+      Icon: VerifiedUserIcon,
+    },
+    org_viewer: {
+      label: 'Visualizador',
+      description: 'Visualiza dados consolidados e detalhe dos hospitais. Não altera nada.',
+      bg: C.blueSoft,
+      fg: C.blue,
+      Icon: VisibilityIcon,
+    },
+  };
+}
 
 // ─── Role chip / Role card ──────────────────────────────────────────────────
 
 function RoleChip({ role }: { role: string }) {
+  const ROLE_META = useRoleMeta();
   const meta = ROLE_META[role as Role];
   if (!meta) {
     return <Chip size="small" label={role} />;
@@ -106,6 +109,7 @@ function RoleCard({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const ROLE_META = useRoleMeta();
   const meta = ROLE_META[role];
   const { Icon } = meta;
   return (

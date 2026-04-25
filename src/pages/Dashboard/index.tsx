@@ -25,14 +25,13 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
+import { useBrand } from '../../hooks/useBrand';
 import api from '../../services/api';
 import type { EnterpriseHub, HospitalSummary } from '../../dtos';
 
-// ─── Tokens ──────────────────────────────────────────────────────────────────
+// ─── Tokens (universais) ─────────────────────────────────────────────────────
 
 const C = {
-  green: '#1a6b4a',
-  greenSoft: '#e8f5ee',
   red: '#dc2626',
   redSoft: '#fff5f5',
   amber: '#b45309',
@@ -94,6 +93,7 @@ function DeltaBadge({
   positiveIsGood?: boolean;
   size?: 'sm' | 'md';
 }) {
+  const brand = useBrand();
   if (delta === null) {
     return (
       <Chip
@@ -113,8 +113,8 @@ function DeltaBadge({
 
   const isUp = delta >= 0;
   const isGood = positiveIsGood ? isUp : !isUp;
-  const fg = isGood ? C.green : C.red;
-  const bg = isGood ? C.greenSoft : C.redSoft;
+  const fg = isGood ? brand.primary : C.red;
+  const bg = isGood ? brand.primarySoft : C.redSoft;
   const Icon = isUp ? ArrowUpwardIcon : ArrowDownwardIcon;
 
   return (
@@ -155,9 +155,10 @@ function HeroBalance({
   activeDoctors: number;
   prevActiveDoctors: number;
 }) {
+  const brand = useBrand();
   const balanceDelta = pctDelta(balance, prevBalance);
   const isPositive = balance >= 0;
-  const accent = isPositive ? C.green : C.red;
+  const accent = isPositive ? brand.primary : C.red;
 
   const marginDelta =
     marginPct !== null && prevMarginPct !== null
@@ -173,7 +174,7 @@ function HeroBalance({
         p: { xs: 2.5, md: 3 },
         border: `1px solid ${C.border}`,
         borderRadius: 3,
-        background: `linear-gradient(135deg, ${C.surface} 0%, ${isPositive ? C.greenSoft : C.redSoft} 220%)`,
+        background: `linear-gradient(135deg, ${C.surface} 0%, ${isPositive ? brand.primarySoft : C.redSoft} 220%)`,
       }}
     >
       <Grid container spacing={3} alignItems="center">
@@ -206,7 +207,7 @@ function HeroBalance({
               <Typography
                 fontSize={11}
                 fontWeight={600}
-                color={marginDelta >= 0 ? C.green : C.red}
+                color={marginDelta >= 0 ? brand.primary : C.red}
               >
                 {marginDelta >= 0 ? '+' : ''}{marginDelta.toFixed(1)} pp
               </Typography>
@@ -239,6 +240,7 @@ function TrendChart({
   data: EnterpriseHub['monthly_history'];
   selectedMonth: string;
 }) {
+  const brand = useBrand();
   const xLabels = data.map(p => monthLabel(p.month));
   const incomeSeries = data.map(p => p.income);
   const outcomeSeries = data.map(p => p.outcome);
@@ -265,7 +267,7 @@ function TrendChart({
           </Typography>
         </Box>
         <Stack direction="row" spacing={2} alignItems="center">
-          <LegendDot color={C.green} label="Receita" />
+          <LegendDot color={brand.primary} label="Receita" />
           <LegendDot color={C.red} label="Custo" />
           <LegendDot color="#1565c0" label="Saldo" />
         </Stack>
@@ -286,7 +288,7 @@ function TrendChart({
             {
               data: incomeSeries,
               label: 'Receita',
-              color: C.green,
+              color: brand.primary,
               showMark: ({ index }) => index === selectedIdx,
               area: false,
               curve: 'monotoneX',
@@ -359,9 +361,10 @@ const SIGNAL_RANK: Record<HospitalSignal, number> = {
 
 function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
   const navigate = useNavigate();
+  const brand = useBrand();
   const balance = hospital.month_income - hospital.month_outcome;
   const isPositive = balance >= 0;
-  const accent = isPositive ? C.green : C.red;
+  const accent = isPositive ? brand.primary : C.red;
 
   const { signal, balanceDelta } = detectSignal(hospital);
   const sparkData = hospital.history_3m.map(p => p.balance);
@@ -401,9 +404,9 @@ function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
         <Avatar
           src={hospital.logo_url ?? undefined}
           variant="rounded"
-          sx={{ width: 40, height: 40, bgcolor: C.greenSoft, flexShrink: 0 }}
+          sx={{ width: 40, height: 40, bgcolor: brand.primarySoft, flexShrink: 0 }}
         >
-          <LocalHospitalIcon sx={{ color: C.green, fontSize: 20 }} />
+          <LocalHospitalIcon sx={{ color: brand.primary, fontSize: 20 }} />
         </Avatar>
         <Box flex={1} overflow="hidden">
           <Typography fontSize={14} fontWeight={600} noWrap>

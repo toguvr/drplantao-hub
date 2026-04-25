@@ -27,14 +27,13 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import { toast } from 'react-toastify';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
+import { useBrand } from '../../hooks/useBrand';
 import api from '../../services/api';
 import type { FinancialData } from '../../dtos';
 
-// ─── Tokens (consistentes com dash) ───────────────────────────────────────
+// ─── Tokens universais (semântica fixa: vermelho=perda, azul=neutro) ────
 
 const C = {
-  green: '#1a6b4a',
-  greenSoft: '#e8f5ee',
   red: '#dc2626',
   redSoft: '#fff5f5',
   blue: '#1565c0',
@@ -88,6 +87,7 @@ function DeltaBadge({
   positiveIsGood?: boolean;
   size?: 'sm' | 'md';
 }) {
+  const brand = useBrand();
   if (delta === null) {
     return (
       <Chip
@@ -106,8 +106,8 @@ function DeltaBadge({
   }
   const isUp = delta >= 0;
   const isGood = positiveIsGood ? isUp : !isUp;
-  const fg = isGood ? C.green : C.red;
-  const bg = isGood ? C.greenSoft : C.redSoft;
+  const fg = isGood ? brand.primary : C.red;
+  const bg = isGood ? brand.primarySoft : C.redSoft;
   const Icon = isUp ? ArrowUpwardIcon : ArrowDownwardIcon;
   return (
     <Chip
@@ -151,8 +151,9 @@ function KpiCard({
   hero?: boolean;
   highlight?: 'positive' | 'negative';
 }) {
+  const brand = useBrand();
   const valueColor =
-    highlight === 'positive' ? C.green : highlight === 'negative' ? C.red : 'text.primary';
+    highlight === 'positive' ? brand.primary : highlight === 'negative' ? C.red : 'text.primary';
   return (
     <Paper
       elevation={0}
@@ -162,7 +163,7 @@ function KpiCard({
         borderRadius: 3,
         height: '100%',
         background: hero
-          ? `linear-gradient(135deg, ${C.surface} 0%, ${highlight === 'positive' ? C.greenSoft : C.redSoft} 240%)`
+          ? `linear-gradient(135deg, ${C.surface} 0%, ${highlight === 'positive' ? brand.primarySoft : C.redSoft} 240%)`
           : C.surface,
       }}
     >
@@ -229,6 +230,7 @@ interface RowWithMargin {
 
 export default function Financial() {
   const { current } = useEnterprise();
+  const brand = useBrand();
   const [monthKey, setMonthKey] = useState(() => toMonthKey(new Date()));
   const [data, setData] = useState<FinancialData | null>(null);
   const [prevData, setPrevData] = useState<FinancialData | null>(null);
@@ -383,8 +385,8 @@ export default function Financial() {
               value={BRL(data.totals.income)}
               delta={incomeDelta}
               Icon={TrendingUpIcon}
-              iconBg={C.greenSoft}
-              iconColor={C.green}
+              iconBg={brand.primarySoft}
+              iconColor={brand.primary}
             />
             <KpiCard
               label="Custo"
@@ -400,8 +402,8 @@ export default function Financial() {
               value={`${balance >= 0 ? '+' : ''}${BRL(balance)}`}
               delta={balanceDelta}
               Icon={AccountBalanceIcon}
-              iconBg={balance >= 0 ? C.greenSoft : C.redSoft}
-              iconColor={balance >= 0 ? C.green : C.red}
+              iconBg={balance >= 0 ? brand.primarySoft : C.redSoft}
+              iconColor={balance >= 0 ? brand.primary : C.red}
               highlight={balance >= 0 ? 'positive' : 'negative'}
               hero
               sub={
@@ -414,7 +416,7 @@ export default function Financial() {
                         component="span"
                         fontSize={11}
                         fontWeight={600}
-                        color={marginDelta >= 0 ? C.green : C.red}
+                        color={marginDelta >= 0 ? brand.primary : C.red}
                       >
                         ({marginDelta >= 0 ? '+' : ''}{marginDelta.toFixed(1)} pp)
                       </Typography>
@@ -450,7 +452,7 @@ export default function Financial() {
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={2}>
-                  <LegendDot color={C.green} label="Receita" />
+                  <LegendDot color={brand.primary} label="Receita" />
                   <LegendDot color={C.red} label="Custo" />
                 </Stack>
               </Box>
@@ -470,7 +472,7 @@ export default function Financial() {
                     {
                       data: topForChart.map(r => r.income),
                       label: 'Receita',
-                      color: C.green,
+                      color: brand.primary,
                     },
                     {
                       data: topForChart.map(r => r.outcome),
@@ -568,7 +570,7 @@ export default function Financial() {
                           <TableCell sx={{ fontWeight: 500, fontSize: 13 }}>
                             {row.hospital_name}
                           </TableCell>
-                          <TableCell align="right" sx={{ color: C.green, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                          <TableCell align="right" sx={{ color: brand.primary, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
                             {BRL(row.income, false)}
                           </TableCell>
                           <TableCell align="right" sx={{ color: C.red, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
@@ -578,7 +580,7 @@ export default function Financial() {
                             align="right"
                             sx={{
                               fontWeight: 700,
-                              color: positive ? C.green : C.red,
+                              color: positive ? brand.primary : C.red,
                               fontSize: 13,
                               fontVariantNumeric: 'tabular-nums',
                             }}
@@ -595,7 +597,7 @@ export default function Financial() {
                   {sortedRows.length > 0 && (
                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
                       <TableCell sx={{ fontWeight: 700, fontSize: 13 }}>TOTAL</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700, color: C.green, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: brand.primary, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
                         {BRL(data.totals.income, false)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 700, color: C.red, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
@@ -605,7 +607,7 @@ export default function Financial() {
                         align="right"
                         sx={{
                           fontWeight: 800,
-                          color: balance >= 0 ? C.green : C.red,
+                          color: balance >= 0 ? brand.primary : C.red,
                           fontSize: 14,
                           fontVariantNumeric: 'tabular-nums',
                         }}
