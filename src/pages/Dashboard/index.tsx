@@ -1,25 +1,26 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Avatar,
   Box,
   Chip,
   CircularProgress,
-  Divider,
   Grid,
   IconButton,
   Paper,
-  Tooltip,
+  Stack,
   Typography,
 } from '@mui/material';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
-import EventNoteIcon from '@mui/icons-material/EventNote';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
-import SpeedIcon from '@mui/icons-material/Speed';
+import EventNoteIcon from '@mui/icons-material/EventNote';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import RemoveIcon from '@mui/icons-material/Remove';
+import { LineChart } from '@mui/x-charts/LineChart';
+import { SparkLineChart } from '@mui/x-charts/SparkLineChart';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { PrivateLayout } from '../../components/PrivateLayout';
@@ -27,121 +28,353 @@ import { useEnterprise } from '../../contexts/EnterpriseContext';
 import api from '../../services/api';
 import type { EnterpriseHub, HospitalSummary } from '../../dtos';
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// ─── Tokens ──────────────────────────────────────────────────────────────────
 
-const BRL = (v: number, compact = false) =>
+const C = {
+  green: '#1a6b4a',
+  greenSoft: '#e8f5ee',
+  red: '#dc2626',
+  redSoft: '#fff5f5',
+  amber: '#b45309',
+  amberSoft: '#fef3c7',
+  border: '#e8eef2',
+  textMuted: '#64748b',
+  surface: '#ffffff',
+};
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const BRL = (v: number, compact = true) =>
   v.toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     maximumFractionDigits: compact ? 0 : 2,
   });
 
-const MONTHS_PT = [
+const MONTHS_PT_SHORT = [
+  'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+  'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
+];
+const MONTHS_PT_LONG = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
-function toMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
+const toMonthKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-function labelFromKey(key: string) {
+const monthLabel = (key: string, long = false) => {
   const [y, m] = key.split('-');
-  return `${MONTHS_PT[Number(m) - 1]} ${y}`;
-}
+  const idx = Number(m) - 1;
+  return long ? `${MONTHS_PT_LONG[idx]} ${y}` : `${MONTHS_PT_SHORT[idx]}/${y.slice(2)}`;
+};
 
-function addMonth(key: string, delta: number): string {
+const addMonth = (key: string, delta: number) => {
   const [y, m] = key.split('-').map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return toMonthKey(d);
-}
+  return toMonthKey(new Date(y, m - 1 + delta, 1));
+};
 
-// ─── KPI card principal ───────────────────────────────────────────────────────
+/** Variação percentual com tratamento para divisão por zero. */
+const pctDelta = (current: number, prev: number): number | null => {
+  if (prev === 0) {
+    if (current === 0) return 0;
+    return null; // não há base para comparar
+  }
+  return ((current - prev) / Math.abs(prev)) * 100;
+};
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon,
-  iconBg,
-  iconColor,
-  highlight,
-  tooltip,
+// ─── DeltaBadge: variação % com seta ────────────────────────────────────────
+
+function DeltaBadge({
+  delta,
+  positiveIsGood = true,
+  size = 'sm',
 }: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  icon: React.ReactNode;
-  iconBg: string;
-  iconColor: string;
-  highlight?: 'positive' | 'negative' | 'neutral';
-  tooltip?: string;
+  delta: number | null;
+  positiveIsGood?: boolean;
+  size?: 'sm' | 'md';
 }) {
-  const valueColor =
-    highlight === 'positive'
-      ? '#1a6b4a'
-      : highlight === 'negative'
-      ? '#dc2626'
-      : 'text.primary';
+  if (delta === null) {
+    return (
+      <Chip
+        size="small"
+        icon={<RemoveIcon sx={{ fontSize: 14 }} />}
+        label="sem base"
+        sx={{
+          height: size === 'md' ? 24 : 20,
+          fontSize: size === 'md' ? 12 : 11,
+          bgcolor: '#f1f5f9',
+          color: C.textMuted,
+          '& .MuiChip-icon': { ml: 0.5, color: C.textMuted },
+        }}
+      />
+    );
+  }
+
+  const isUp = delta >= 0;
+  const isGood = positiveIsGood ? isUp : !isUp;
+  const fg = isGood ? C.green : C.red;
+  const bg = isGood ? C.greenSoft : C.redSoft;
+  const Icon = isUp ? ArrowUpwardIcon : ArrowDownwardIcon;
 
   return (
-    <Tooltip title={tooltip ?? ''} placement="top" arrow>
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2.5,
-          border: '1px solid #e8eef2',
-          borderRadius: 3,
-          height: '100%',
-          transition: 'box-shadow 0.15s',
-          '&:hover': { boxShadow: '0 4px 16px rgba(0,0,0,0.07)' },
-        }}
-      >
-        <Box display="flex" alignItems="flex-start" justifyContent="space-between">
-          <Box>
-            <Typography fontSize={11} color="text.secondary" fontWeight={500} mb={0.5} textTransform="uppercase" letterSpacing={0.5}>
-              {label}
-            </Typography>
-            <Typography fontSize={22} fontWeight={700} color={valueColor} lineHeight={1.2}>
-              {value}
-            </Typography>
-            {sub && (
-              <Typography fontSize={11} color="text.secondary" mt={0.5}>
-                {sub}
-              </Typography>
-            )}
-          </Box>
-          <Box
-            sx={{
-              width: 44,
-              height: 44,
-              borderRadius: 2,
-              bgcolor: iconBg,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              ml: 1,
-            }}
-          >
-            <Box sx={{ color: iconColor, display: 'flex' }}>{icon}</Box>
-          </Box>
-        </Box>
-      </Paper>
-    </Tooltip>
+    <Chip
+      size="small"
+      icon={<Icon sx={{ fontSize: 14 }} />}
+      label={`${isUp ? '+' : ''}${delta.toFixed(1)}%`}
+      sx={{
+        height: size === 'md' ? 26 : 20,
+        fontSize: size === 'md' ? 12 : 11,
+        fontWeight: 600,
+        bgcolor: bg,
+        color: fg,
+        '& .MuiChip-icon': { ml: 0.5, color: fg },
+      }}
+    />
   );
 }
 
-// ─── Hospital card ────────────────────────────────────────────────────────────
+// ─── Hero card ───────────────────────────────────────────────────────────────
+
+function HeroBalance({
+  balance,
+  income,
+  outcome,
+  prevBalance,
+  marginPct,
+  prevMarginPct,
+  activeDoctors,
+  prevActiveDoctors,
+}: {
+  balance: number;
+  income: number;
+  outcome: number;
+  prevBalance: number;
+  marginPct: number | null;
+  prevMarginPct: number | null;
+  activeDoctors: number;
+  prevActiveDoctors: number;
+}) {
+  const balanceDelta = pctDelta(balance, prevBalance);
+  const isPositive = balance >= 0;
+  const accent = isPositive ? C.green : C.red;
+
+  const marginDelta =
+    marginPct !== null && prevMarginPct !== null
+      ? marginPct - prevMarginPct
+      : null;
+
+  const doctorsDelta = pctDelta(activeDoctors, prevActiveDoctors);
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 2.5, md: 3 },
+        border: `1px solid ${C.border}`,
+        borderRadius: 3,
+        background: `linear-gradient(135deg, ${C.surface} 0%, ${isPositive ? C.greenSoft : C.redSoft} 220%)`,
+      }}
+    >
+      <Grid container spacing={3} alignItems="center">
+        {/* Bloco principal: Saldo */}
+        <Grid item xs={12} md={6}>
+          <Typography fontSize={11} fontWeight={600} color="text.secondary" textTransform="uppercase" letterSpacing={0.6}>
+            Saldo do mês
+          </Typography>
+          <Box display="flex" alignItems="baseline" gap={1.5} mt={0.5} flexWrap="wrap">
+            <Typography fontSize={{ xs: 28, md: 36 }} fontWeight={800} color={accent} lineHeight={1.1}>
+              {isPositive ? '+' : ''}{BRL(balance)}
+            </Typography>
+            <DeltaBadge delta={balanceDelta} size="md" />
+          </Box>
+          <Typography fontSize={12} color="text.secondary" mt={0.75}>
+            Receita {BRL(income)} · Custo {BRL(outcome)}
+          </Typography>
+        </Grid>
+
+        {/* Satélites */}
+        <Grid item xs={6} md={3}>
+          <Typography fontSize={11} fontWeight={600} color="text.secondary" textTransform="uppercase" letterSpacing={0.6}>
+            Margem líquida
+          </Typography>
+          <Box display="flex" alignItems="baseline" gap={1} mt={0.5} flexWrap="wrap">
+            <Typography fontSize={{ xs: 18, md: 22 }} fontWeight={700} color="text.primary">
+              {marginPct === null ? '—' : `${marginPct.toFixed(1)}%`}
+            </Typography>
+            {marginDelta !== null && (
+              <Typography
+                fontSize={11}
+                fontWeight={600}
+                color={marginDelta >= 0 ? C.green : C.red}
+              >
+                {marginDelta >= 0 ? '+' : ''}{marginDelta.toFixed(1)} pp
+              </Typography>
+            )}
+          </Box>
+        </Grid>
+
+        <Grid item xs={6} md={3}>
+          <Typography fontSize={11} fontWeight={600} color="text.secondary" textTransform="uppercase" letterSpacing={0.6}>
+            Médicos ativos
+          </Typography>
+          <Box display="flex" alignItems="baseline" gap={1} mt={0.5} flexWrap="wrap">
+            <Typography fontSize={{ xs: 18, md: 22 }} fontWeight={700} color="text.primary">
+              {activeDoctors}
+            </Typography>
+            <DeltaBadge delta={doctorsDelta} />
+          </Box>
+        </Grid>
+      </Grid>
+    </Paper>
+  );
+}
+
+// ─── Trend chart ────────────────────────────────────────────────────────────
+
+function TrendChart({
+  data,
+  selectedMonth,
+}: {
+  data: EnterpriseHub['monthly_history'];
+  selectedMonth: string;
+}) {
+  const xLabels = data.map(p => monthLabel(p.month));
+  const incomeSeries = data.map(p => p.income);
+  const outcomeSeries = data.map(p => p.outcome);
+  const balanceSeries = data.map(p => p.balance);
+
+  const selectedIdx = data.findIndex(p => p.month === selectedMonth);
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 2, md: 2.5 },
+        border: `1px solid ${C.border}`,
+        borderRadius: 3,
+      }}
+    >
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
+        <Box>
+          <Typography fontSize={14} fontWeight={700}>
+            Últimos 6 meses
+          </Typography>
+          <Typography fontSize={11} color="text.secondary">
+            Receita, custo e saldo consolidados
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <LegendDot color={C.green} label="Receita" />
+          <LegendDot color={C.red} label="Custo" />
+          <LegendDot color="#1565c0" label="Saldo" />
+        </Stack>
+      </Box>
+
+      <Box sx={{ width: '100%', height: 260 }}>
+        <LineChart
+          xAxis={[{
+            data: xLabels,
+            scaleType: 'point',
+            tickLabelStyle: { fontSize: 11, fill: C.textMuted },
+          }]}
+          yAxis={[{
+            valueFormatter: v => BRL(Number(v) || 0),
+            tickLabelStyle: { fontSize: 11, fill: C.textMuted },
+          }]}
+          series={[
+            {
+              data: incomeSeries,
+              label: 'Receita',
+              color: C.green,
+              showMark: ({ index }) => index === selectedIdx,
+              area: false,
+              curve: 'monotoneX',
+            },
+            {
+              data: outcomeSeries,
+              label: 'Custo',
+              color: C.red,
+              showMark: ({ index }) => index === selectedIdx,
+              area: false,
+              curve: 'monotoneX',
+            },
+            {
+              data: balanceSeries,
+              label: 'Saldo',
+              color: '#1565c0',
+              showMark: ({ index }) => index === selectedIdx,
+              area: true,
+              curve: 'monotoneX',
+            },
+          ]}
+          margin={{ top: 16, right: 24, bottom: 28, left: 64 }}
+          slotProps={{ legend: { hidden: true } }}
+          sx={{
+            '& .MuiAreaElement-series-2': { fill: 'url(#balanceGradient)' },
+          }}
+        >
+          <defs>
+            <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1565c0" stopOpacity={0.18} />
+              <stop offset="100%" stopColor="#1565c0" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+        </LineChart>
+      </Box>
+    </Paper>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <Box display="flex" alignItems="center" gap={0.75}>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+      <Typography fontSize={11} color="text.secondary">{label}</Typography>
+    </Box>
+  );
+}
+
+// ─── Hospital card ──────────────────────────────────────────────────────────
+
+type HospitalSignal = 'critical' | 'warning' | 'inactive' | 'ok';
+
+function detectSignal(h: HospitalSummary): { signal: HospitalSignal; balanceDelta: number | null } {
+  const balance = h.month_income - h.month_outcome;
+  const prevBalance = h.prev_month_income - h.prev_month_outcome;
+  const delta = pctDelta(balance, prevBalance);
+
+  if (h.month_appointments === 0) return { signal: 'inactive', balanceDelta: delta };
+  if (balance < 0) return { signal: 'critical', balanceDelta: delta };
+  if (delta !== null && delta < -15) return { signal: 'warning', balanceDelta: delta };
+  return { signal: 'ok', balanceDelta: delta };
+}
+
+const SIGNAL_RANK: Record<HospitalSignal, number> = {
+  critical: 0,
+  warning: 1,
+  inactive: 2,
+  ok: 3,
+};
 
 function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
   const navigate = useNavigate();
   const balance = hospital.month_income - hospital.month_outcome;
   const isPositive = balance >= 0;
-  const margin =
-    hospital.month_income > 0
-      ? ((balance / hospital.month_income) * 100).toFixed(1)
-      : null;
+  const accent = isPositive ? C.green : C.red;
+
+  const { signal, balanceDelta } = detectSignal(hospital);
+  const sparkData = hospital.history_3m.map(p => p.balance);
+
+  const badge = (() => {
+    if (signal === 'critical')
+      return { label: 'Saldo negativo', color: C.red, bg: C.redSoft, icon: <WarningAmberIcon sx={{ fontSize: 13 }} /> };
+    if (signal === 'warning')
+      return { label: 'Queda relevante', color: C.amber, bg: C.amberSoft, icon: <WarningAmberIcon sx={{ fontSize: 13 }} /> };
+    if (signal === 'inactive')
+      return { label: 'Sem plantões', color: C.textMuted, bg: '#f1f5f9', icon: null };
+    return null;
+  })();
 
   return (
     <Paper
@@ -149,64 +382,90 @@ function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
       onClick={() => navigate(`/hospitais/${hospital.id}`)}
       sx={{
         p: 2,
-        border: '1px solid #e8eef2',
+        border: `1px solid ${signal === 'critical' ? C.red : signal === 'warning' ? C.amber : C.border}`,
         borderRadius: 3,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 2,
         cursor: 'pointer',
-        transition: 'border-color 0.15s, box-shadow 0.15s',
+        transition: 'transform 0.12s, box-shadow 0.12s, border-color 0.12s',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
         '&:hover': {
-          borderColor: '#1a6b4a',
-          boxShadow: '0 2px 8px rgba(26,107,74,0.12)',
+          transform: 'translateY(-2px)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
         },
       }}
     >
-      <Avatar
-        src={hospital.logo_url ?? undefined}
-        variant="rounded"
-        sx={{ width: 44, height: 44, bgcolor: '#e8f5ee', flexShrink: 0 }}
-      >
-        <LocalHospitalIcon sx={{ color: '#1a6b4a', fontSize: 22 }} />
-      </Avatar>
+      {/* Header: avatar + nome */}
+      <Box display="flex" alignItems="center" gap={1.5}>
+        <Avatar
+          src={hospital.logo_url ?? undefined}
+          variant="rounded"
+          sx={{ width: 40, height: 40, bgcolor: C.greenSoft, flexShrink: 0 }}
+        >
+          <LocalHospitalIcon sx={{ color: C.green, fontSize: 20 }} />
+        </Avatar>
+        <Box flex={1} overflow="hidden">
+          <Typography fontSize={14} fontWeight={600} noWrap>
+            {hospital.name}
+          </Typography>
+          <Typography fontSize={11} color="text.secondary" noWrap>
+            {[hospital.cidade, hospital.uf].filter(Boolean).join(' – ') || '—'}
+          </Typography>
+        </Box>
+      </Box>
 
-      <Box flex={1} overflow="hidden">
-        <Typography fontSize={14} fontWeight={600} noWrap>
-          {hospital.name}
-        </Typography>
-        <Typography fontSize={12} color="text.secondary" noWrap>
-          {[hospital.cidade, hospital.uf].filter(Boolean).join(' – ')}
+      {/* Saldo + delta */}
+      <Box>
+        <Box display="flex" alignItems="baseline" gap={1} flexWrap="wrap">
+          <Typography fontSize={20} fontWeight={700} color={accent} lineHeight={1.1}>
+            {isPositive ? '+' : ''}{BRL(balance)}
+          </Typography>
+          <DeltaBadge delta={balanceDelta} />
+        </Box>
+        <Typography fontSize={11} color="text.secondary" mt={0.25}>
+          saldo do mês
         </Typography>
       </Box>
 
-      {/* plantões do mês */}
-      <Box textAlign="center" sx={{ display: { xs: 'none', sm: 'block' } }}>
-        <Typography fontSize={13} fontWeight={600}>
-          {hospital.month_appointments}
-        </Typography>
-        <Typography fontSize={10} color="text.secondary">
-          plantões
-        </Typography>
+      {/* Sparkline 3 meses */}
+      <Box sx={{ width: '100%', height: 36, mt: -0.5 }}>
+        <SparkLineChart
+          data={sparkData}
+          height={36}
+          curve="monotoneX"
+          area
+          colors={[accent]}
+          showHighlight
+          showTooltip
+          xAxis={{
+            data: hospital.history_3m.map(p => monthLabel(p.month)),
+            scaleType: 'point',
+          }}
+          valueFormatter={v => BRL(Number(v) || 0)}
+        />
       </Box>
 
-      <Divider orientation="vertical" flexItem sx={{ mx: 0.5, display: { xs: 'none', sm: 'flex' } }} />
-
-      {/* saldo do mês */}
-      <Box textAlign="right" flexShrink={0}>
-        <Typography fontSize={13} fontWeight={700} color={isPositive ? '#1a6b4a' : '#dc2626'}>
-          {isPositive ? '+' : ''}{BRL(balance, true)}
-        </Typography>
-        {margin !== null && (
+      {/* Footer: plantões + badge */}
+      <Box display="flex" alignItems="center" justifyContent="space-between" mt="auto" pt={0.5}>
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <EventNoteIcon sx={{ fontSize: 14, color: C.textMuted }} />
+          <Typography fontSize={12} color="text.secondary">
+            {hospital.month_appointments} plantões
+          </Typography>
+        </Box>
+        {badge && (
           <Chip
-            label={`${isPositive ? '+' : ''}${margin}%`}
             size="small"
+            icon={badge.icon ?? undefined}
+            label={badge.label}
             sx={{
-              height: 18,
+              height: 22,
               fontSize: 10,
               fontWeight: 600,
-              bgcolor: isPositive ? '#e8f5ee' : '#fff5f5',
-              color: isPositive ? '#1a6b4a' : '#dc2626',
-              mt: 0.3,
+              bgcolor: badge.bg,
+              color: badge.color,
+              '& .MuiChip-icon': { ml: 0.5, color: badge.color },
             }}
           />
         )}
@@ -215,11 +474,10 @@ function HospitalCard({ hospital }: { hospital: HospitalSummary }) {
   );
 }
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+// ─── Dashboard ──────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { current } = useEnterprise();
-
   const [monthKey, setMonthKey] = useState(() => toMonthKey(new Date()));
   const [hub, setHub] = useState<EnterpriseHub | null>(null);
   const [loading, setLoading] = useState(false);
@@ -239,47 +497,54 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // KPIs derivados
-  const balance = hub ? hub.month_income - hub.month_outcome : 0;
-  const margin =
-    hub && hub.month_income > 0
-      ? ((balance / hub.month_income) * 100).toFixed(1)
-      : null;
   const isCurrentMonth = monthKey === toMonthKey(new Date());
+
+  // Hospitais ordenados: alertas primeiro, depois por saldo
+  const sortedHospitals = useMemo(() => {
+    if (!hub) return [];
+    return [...hub.hospitals].sort((a, b) => {
+      const sa = detectSignal(a).signal;
+      const sb = detectSignal(b).signal;
+      if (sa !== sb) return SIGNAL_RANK[sa] - SIGNAL_RANK[sb];
+      const balA = a.month_income - a.month_outcome;
+      const balB = b.month_income - b.month_outcome;
+      return balB - balA;
+    });
+  }, [hub]);
+
+  const balance = hub ? hub.month_income - hub.month_outcome : 0;
+  const prevBalance = hub ? hub.prev_month_income - hub.prev_month_outcome : 0;
+  const marginPct = hub && hub.month_income > 0 ? (balance / hub.month_income) * 100 : null;
+  const prevMarginPct = hub && hub.prev_month_income > 0 ? (prevBalance / hub.prev_month_income) * 100 : null;
 
   return (
     <PrivateLayout>
-      {/* ── Cabeçalho ─────────────────────────────────────────────────── */}
-      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3} flexWrap="wrap" gap={2}>
+      {/* Header */}
+      <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={2.5} flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h5" fontWeight={700} color="text.primary">
+          <Typography variant="h5" fontWeight={800} color="text.primary">
             {current?.title || 'Dashboard'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Visão consolidada da organização
+            Visão consolidada · {monthLabel(monthKey, true)}
           </Typography>
         </Box>
 
-        {/* navegador de mês */}
-        <Box display="flex" alignItems="center" gap={0.5}>
+        <Box
+          display="flex"
+          alignItems="center"
+          gap={0.5}
+          sx={{ border: `1px solid ${C.border}`, borderRadius: 2, p: 0.5, bgcolor: C.surface }}
+        >
           <IconButton size="small" onClick={() => setMonthKey(k => addMonth(k, -1))}>
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
-          <Box
-            sx={{
-              px: 2,
-              py: 0.5,
-              border: '1px solid #e0e0e0',
-              borderRadius: 2,
-              minWidth: 160,
-              textAlign: 'center',
-            }}
-          >
-            <Typography fontSize={14} fontWeight={600}>
-              {labelFromKey(monthKey)}
+          <Box px={1.5} minWidth={120} textAlign="center">
+            <Typography fontSize={13} fontWeight={700}>
+              {monthLabel(monthKey, true)}
             </Typography>
             {isCurrentMonth && (
-              <Typography fontSize={10} color="text.secondary">
+              <Typography fontSize={9} color="text.secondary" textTransform="uppercase" letterSpacing={0.6}>
                 mês atual
               </Typography>
             )}
@@ -298,127 +563,63 @@ export default function Dashboard() {
         <Box display="flex" justifyContent="center" pt={8}>
           <CircularProgress />
         </Box>
+      ) : hub.hospitals_count === 0 ? (
+        <Paper
+          elevation={0}
+          sx={{ p: 5, textAlign: 'center', border: `1px solid ${C.border}`, borderRadius: 3 }}
+        >
+          <LocalHospitalIcon sx={{ fontSize: 40, color: C.textMuted, mb: 1 }} />
+          <Typography fontSize={15} fontWeight={600}>
+            Nenhum hospital vinculado
+          </Typography>
+          <Typography fontSize={12} color="text.secondary">
+            Adicione hospitais à organização para ver dados consolidados aqui.
+          </Typography>
+        </Paper>
       ) : (
         <>
-          {/* ── KPIs linha 1: financeiros do mês ──────────────────────── */}
-          <Grid container spacing={2} mb={2}>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Receita do mês"
-                value={BRL(hub.month_income, true)}
-                icon={<TrendingUpIcon fontSize="small" />}
-                iconBg="#e8f5ee"
-                iconColor="#1a6b4a"
-                highlight="positive"
-                tooltip="Total de receitas lançadas no período"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Custo do mês"
-                value={BRL(hub.month_outcome, true)}
-                icon={<TrendingDownIcon fontSize="small" />}
-                iconBg="#fff5f5"
-                iconColor="#dc2626"
-                highlight="negative"
-                tooltip="Total de custos lançados no período"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Saldo do mês"
-                value={`${balance >= 0 ? '+' : ''}${BRL(balance, true)}`}
-                sub={margin !== null ? `margem líquida ${balance >= 0 ? '+' : ''}${margin}%` : undefined}
-                icon={<AccountBalanceIcon fontSize="small" />}
-                iconBg={balance >= 0 ? '#e8f5ee' : '#fff5f5'}
-                iconColor={balance >= 0 ? '#1a6b4a' : '#dc2626'}
-                highlight={balance >= 0 ? 'positive' : 'negative'}
-                tooltip="Receita menos custo no período"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Plantões no mês"
-                value={hub.month_appointments.toLocaleString('pt-BR')}
-                icon={<EventNoteIcon fontSize="small" />}
-                iconBg="#e3f2fd"
-                iconColor="#1565c0"
-                tooltip="Total de plantões com data no período"
-              />
-            </Grid>
-          </Grid>
-
-          {/* ── KPIs linha 2: operacionais ────────────────────────────── */}
-          <Grid container spacing={2} mb={3}>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Médicos ativos"
-                value={hub.active_doctors}
-                sub="com plantão no período"
-                icon={<PeopleAltIcon fontSize="small" />}
-                iconBg="#f3e5f5"
-                iconColor="#7b1fa2"
-                tooltip="Médicos distintos com ao menos 1 plantão no mês"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Custo médio / plantão"
-                value={BRL(hub.avg_cost_per_appointment, true)}
-                sub="sobre custo total do mês"
-                icon={<SpeedIcon fontSize="small" />}
-                iconBg="#fff8e1"
-                iconColor="#f57f17"
-                tooltip="Custo total do mês dividido pelo número de plantões"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Hospitais"
-                value={hub.hospitals_count}
-                sub="na organização"
-                icon={<LocalHospitalIcon fontSize="small" />}
-                iconBg="#e8f5ee"
-                iconColor="#1a6b4a"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <KpiCard
-                label="Plantões (total histórico)"
-                value={hub.total_appointments.toLocaleString('pt-BR')}
-                sub="desde o início"
-                icon={<EventNoteIcon fontSize="small" />}
-                iconBg="#f5f5f5"
-                iconColor="#757575"
-                highlight="neutral"
-              />
-            </Grid>
-          </Grid>
-
-          {/* ── Lista de hospitais ─────────────────────────────────────── */}
-          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5}>
-            <Typography fontSize={15} fontWeight={600}>
-              Hospitais da Organização
-            </Typography>
-            <Typography fontSize={12} color="text.secondary">
-              Saldo = receita − custo em {labelFromKey(monthKey)}
-            </Typography>
+          {/* Zona 1 — Hero */}
+          <Box mb={2.5}>
+            <HeroBalance
+              balance={balance}
+              income={hub.month_income}
+              outcome={hub.month_outcome}
+              prevBalance={prevBalance}
+              marginPct={marginPct}
+              prevMarginPct={prevMarginPct}
+              activeDoctors={hub.active_doctors}
+              prevActiveDoctors={hub.prev_active_doctors}
+            />
           </Box>
 
-          <Box display="flex" flexDirection="column" gap={1.5}>
-            {hub.hospitals.length === 0 ? (
-              <Typography color="text.secondary" fontSize={13}>
-                Nenhum hospital vinculado a esta organização.
+          {/* Zona 2 — Tendência */}
+          <Box mb={2.5}>
+            <TrendChart data={hub.monthly_history} selectedMonth={monthKey} />
+          </Box>
+
+          {/* Zona 3 — Hospitais */}
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
+            <Typography fontSize={14} fontWeight={700}>
+              Hospitais da organização
+              <Typography component="span" fontSize={12} color="text.secondary" ml={1}>
+                · {hub.hospitals_count}
               </Typography>
-            ) : (
-              [...hub.hospitals]
-                .sort(
-                  (a, b) =>
-                    b.month_income - b.month_outcome - (a.month_income - a.month_outcome),
-                )
-                .map(h => <HospitalCard key={h.id} hospital={h} />)
-            )}
+            </Typography>
+            <Box display="flex" alignItems="center" gap={0.5}>
+              <PeopleAltIcon sx={{ fontSize: 14, color: C.textMuted }} />
+              <Typography fontSize={11} color="text.secondary">
+                Alertas primeiro · ordenado por saldo
+              </Typography>
+            </Box>
           </Box>
+
+          <Grid container spacing={2}>
+            {sortedHospitals.map(h => (
+              <Grid key={h.id} item xs={12} sm={6} md={4}>
+                <HospitalCard hospital={h} />
+              </Grid>
+            ))}
+          </Grid>
         </>
       )}
     </PrivateLayout>

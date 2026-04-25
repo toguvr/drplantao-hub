@@ -39,13 +39,26 @@ export interface Hospital {
   enterprise_id?: string;
 }
 
+export interface HospitalHistoryPoint {
+  month: string;
+  balance: number;
+}
+
 export interface HospitalSummary extends Hospital {
-  total_appointments: number;
-  total_income: number;
-  total_outcome: number;
   month_appointments: number;
   month_income: number;
   month_outcome: number;
+  prev_month_income: number;
+  prev_month_outcome: number;
+  history_3m: HospitalHistoryPoint[];
+}
+
+export interface MonthlyPoint {
+  month: string;
+  income: number;
+  outcome: number;
+  balance: number;
+  appointments: number;
 }
 
 export interface EnterpriseHub {
@@ -54,14 +67,19 @@ export interface EnterpriseHub {
   logo_url?: string;
   month: string; // YYYY-MM
   hospitals_count: number;
-  total_appointments: number;
-  total_income: number;
-  total_outcome: number;
-  month_appointments: number;
+
   month_income: number;
   month_outcome: number;
+  month_appointments: number;
   active_doctors: number;
   avg_cost_per_appointment: number;
+
+  prev_month_income: number;
+  prev_month_outcome: number;
+  prev_month_appointments: number;
+  prev_active_doctors: number;
+
+  monthly_history: MonthlyPoint[];
   hospitals: HospitalSummary[];
 }
 
