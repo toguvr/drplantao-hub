@@ -336,8 +336,10 @@ export default function Users() {
     if (!newEmail || !current?.id) return;
     setAdding(true);
     try {
-      const userRes = await api.get(`/users?email=${encodeURIComponent(newEmail)}`);
-      const user = Array.isArray(userRes.data) ? userRes.data[0] : userRes.data;
+      const userRes = await api.get('/users/by-email', {
+        params: { email: newEmail.trim() },
+      });
+      const user = userRes.data;
       if (!user?.id) {
         toast.error('Usuário não encontrado.');
         return;
@@ -353,7 +355,11 @@ export default function Users() {
       setNewRole('org_viewer');
       load();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Erro ao adicionar.');
+      const status = err?.response?.status;
+      const msg = status === 404
+        ? 'Usuário não encontrado para este e-mail.'
+        : err?.response?.data?.message || 'Erro ao adicionar.';
+      toast.error(msg);
     } finally {
       setAdding(false);
     }
