@@ -1,49 +1,166 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   Avatar,
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   IconButton,
+  InputAdornment,
+  Menu,
+  MenuItem,
   Paper,
+  Skeleton,
+  Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Divider,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+import LinkIcon from '@mui/icons-material/Link';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import SearchIcon from '@mui/icons-material/Search';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { PrivateLayout } from '../../components/PrivateLayout';
 import { useEnterprise } from '../../contexts/EnterpriseContext';
+import { useBrand } from '../../hooks/useBrand';
 import api from '../../services/api';
 import type { Hospital } from '../../dtos';
 
 type FormState = Partial<Hospital> & { [key: string]: any };
 
+const C = {
+  red: '#dc2626',
+  redSoft: '#fff5f5',
+  border: '#e8eef2',
+  borderSoft: '#f1f5f9',
+  textMuted: '#64748b',
+  surface: '#ffffff',
+};
+
+// ─── Row de hospital com menu kebab ────────────────────────────────────────
+
+function HospitalRow({
+  hospital,
+  onOpenDetail,
+  onEdit,
+  onUnlink,
+  onDelete,
+}: {
+  hospital: Hospital;
+  onOpenDetail: () => void;
+  onEdit: () => void;
+  onUnlink: () => void;
+  onDelete: () => void;
+}) {
+  const brand = useBrand();
+  const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+
+  return (
+    <TableRow hover>
+      <TableCell sx={{ width: 56 }}>
+        <Avatar
+          src={hospital.logo_url}
+          variant="rounded"
+          sx={{ width: 36, height: 36, bgcolor: brand.primarySoft }}
+        >
+          <LocalHospitalIcon sx={{ color: brand.primary, fontSize: 18 }} />
+        </Avatar>
+      </TableCell>
+      <TableCell sx={{ fontWeight: 600, fontSize: 13 }}>
+        {hospital.name}
+      </TableCell>
+      <TableCell sx={{ fontSize: 12, color: 'text.secondary' }}>
+        {[hospital.cidade, hospital.uf].filter(Boolean).join(' / ') || '—'}
+      </TableCell>
+      <TableCell sx={{ fontSize: 12 }}>
+        {hospital.adminFee != null ? `${hospital.adminFee}%` : '—'}
+      </TableCell>
+      <TableCell sx={{ fontSize: 12 }}>
+        {hospital.min_hours != null ? `${hospital.min_hours}h` : '—'}
+      </TableCell>
+      <TableCell align="right">
+        <Tooltip title="Ver detalhes">
+          <IconButton size="small" onClick={onOpenDetail} sx={{ color: brand.primary }}>
+            <OpenInNewIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <IconButton size="small" onClick={e => setAnchor(e.currentTarget)}>
+          <MoreVertIcon fontSize="small" />
+        </IconButton>
+        <Menu
+          anchorEl={anchor}
+          open={!!anchor}
+          onClose={() => setAnchor(null)}
+          PaperProps={{ sx: { minWidth: 200 } }}
+        >
+          <MenuItem onClick={() => { setAnchor(null); onEdit(); }}>
+            <EditIcon sx={{ fontSize: 16, mr: 1.25, color: C.textMuted }} />
+            <Typography fontSize={13}>Editar</Typography>
+          </MenuItem>
+          <MenuItem onClick={() => { setAnchor(null); onUnlink(); }}>
+            <LinkOffIcon sx={{ fontSize: 16, mr: 1.25, color: C.textMuted }} />
+            <Typography fontSize={13}>Desvincular da org</Typography>
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={() => { setAnchor(null); onDelete(); }} sx={{ color: C.red }}>
+            <DeleteIcon sx={{ fontSize: 16, mr: 1.25 }} />
+            <Typography fontSize={13}>Excluir hospital</Typography>
+          </MenuItem>
+        </Menu>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Página ────────────────────────────────────────────────────────────────
+
 export default function Hospitals() {
   const navigate = useNavigate();
   const { current } = useEnterprise();
+  const brand = useBrand();
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [available, setAvailable] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mode, setMode] = useState<'create' | 'edit'>('create');
+  const [search, setSearch] = useState('');
+
+  // Add dialog (com tabs)
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTab, setAddTab] = useState<'link' | 'create'>('link');
+
+  // Vincular existente
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+
+  // Cadastrar novo
   const [form, setForm] = useState<FormState>({});
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<'create' | 'edit'>('create');
+  const [savingForm, setSavingForm] = useState(false);
+
+  // Confirmações
+  const [unlinkItem, setUnlinkItem] = useState<Hospital | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
+  const [deleteItem, setDeleteItem] = useState<Hospital | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     if (!current?.id) return;
@@ -58,21 +175,53 @@ export default function Hospitals() {
     }
   };
 
-  useEffect(() => {
-    load();
-  }, [current?.id]);
+  const loadAvailable = async () => {
+    if (!current?.id) return;
+    try {
+      const res = await api.get(`/enterprise/${current.id}/available-hospitals`);
+      setAvailable(res.data);
+    } catch {
+      toast.error('Erro ao buscar hospitais disponíveis.');
+    }
+  };
 
-  const openCreate = () => {
-    setForm({ enterprise_id: current?.id });
-    setMode('create');
-    setDrawerOpen(true);
+  useEffect(() => { load(); }, [current?.id]);
+
+  const openAdd = () => {
+    setForm({});
+    setLinkSearch('');
+    setAddTab('link');
+    setEditMode('create');
+    loadAvailable();
+    setAddOpen(true);
   };
 
   const openEdit = (h: Hospital) => {
     setForm({ ...h });
-    setMode('edit');
-    setDrawerOpen(true);
+    setEditMode('edit');
+    setAddTab('create');
+    setAddOpen(true);
   };
+
+  const filteredHospitals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return hospitals;
+    return hospitals.filter(h =>
+      (h.name || '').toLowerCase().includes(q) ||
+      (h.cidade || '').toLowerCase().includes(q) ||
+      (h.uf || '').toLowerCase().includes(q),
+    );
+  }, [hospitals, search]);
+
+  const filteredAvailable = useMemo(() => {
+    const q = linkSearch.trim().toLowerCase();
+    if (!q) return available;
+    return available.filter(h =>
+      (h.name || '').toLowerCase().includes(q) ||
+      (h.cidade || '').toLowerCase().includes(q) ||
+      (h.uf || '').toLowerCase().includes(q),
+    );
+  }, [available, linkSearch]);
 
   const getCep = async () => {
     if (!form.cep || String(form.cep).replace(/\D/g, '').length < 8) return;
@@ -85,37 +234,76 @@ export default function Hospitals() {
     } catch {}
   };
 
-  const handleSave = async () => {
-    setLoading(true);
+  const handleSaveForm = async () => {
+    setSavingForm(true);
     try {
-      if (mode === 'create') {
+      if (editMode === 'create') {
+        // Backend cria o hospital + o vínculo automaticamente quando enterprise_id vem no body
         await api.post('/hospital', { ...form, enterprise_id: current?.id });
-        toast.success('Hospital criado!');
+        toast.success('Hospital criado e vinculado!');
       } else {
         await api.put('/hospital', { ...form, hospital_id: form.id });
         toast.success('Hospital atualizado!');
       }
-      setDrawerOpen(false);
+      setAddOpen(false);
       load();
     } catch {
       toast.error('Erro ao salvar hospital.');
     } finally {
-      setLoading(false);
+      setSavingForm(false);
+    }
+  };
+
+  const handleLinkExisting = async (hospitalId: string) => {
+    if (!current?.id) return;
+    setLinkingId(hospitalId);
+    try {
+      await api.post('/enterprise-hospital', {
+        enterprise_id: current.id,
+        hospital_id: hospitalId,
+      });
+      toast.success('Hospital vinculado!');
+      setAddOpen(false);
+      load();
+    } catch (err: any) {
+      const msg = err?.response?.status === 409
+        ? 'Este hospital já está vinculado.'
+        : err?.response?.data?.message || 'Erro ao vincular.';
+      toast.error(msg);
+    } finally {
+      setLinkingId(null);
+    }
+  };
+
+  const handleUnlink = async () => {
+    if (!unlinkItem || !current?.id) return;
+    setUnlinking(true);
+    try {
+      await api.delete(
+        `/enterprise-hospital/by-pair/${current.id}/${unlinkItem.id}`,
+      );
+      toast.success('Hospital desvinculado da organização.');
+      setUnlinkItem(null);
+      load();
+    } catch {
+      toast.error('Erro ao desvincular.');
+    } finally {
+      setUnlinking(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    setLoading(true);
+    if (!deleteItem) return;
+    setDeleting(true);
     try {
-      await api.delete(`/hospital/${deleteId}`);
+      await api.delete(`/hospital/${deleteItem.id}`);
       toast.success('Hospital excluído.');
-      setDeleteId(null);
+      setDeleteItem(null);
       load();
     } catch {
       toast.error('Erro ao excluir hospital.');
     } finally {
-      setLoading(false);
+      setDeleting(false);
     }
   };
 
@@ -127,81 +315,78 @@ export default function Hospitals() {
 
   return (
     <PrivateLayout>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      {/* Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2.5} flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
+          <Typography variant="h5" fontWeight={800}>
             Hospitais
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {current?.title}
+            {current?.title} · {hospitals.length} {hospitals.length === 1 ? 'hospital vinculado' : 'hospitais vinculados'}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-          Adicionar Hospital
-        </Button>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          <TextField
+            size="small"
+            placeholder="Buscar por nome ou cidade"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            sx={{ minWidth: { sm: 280 }, bgcolor: C.surface }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ fontSize: 18, color: C.textMuted }} />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
+            Adicionar
+          </Button>
+        </Stack>
       </Box>
 
-      <Paper elevation={0} sx={{ border: '1px solid #e8eef2' }}>
+      {/* Tabela */}
+      <Paper elevation={0} sx={{ border: `1px solid ${C.border}`, borderRadius: 3, overflow: 'hidden' }}>
         {loading ? (
-          <Box display="flex" justifyContent="center" p={4}>
-            <CircularProgress />
+          <Box p={2}>
+            <Stack spacing={1}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} variant="rounded" height={56} />
+              ))}
+            </Stack>
           </Box>
         ) : (
-          <Table>
+          <Table size="small">
             <TableHead sx={{ bgcolor: '#f8fafc' }}>
               <TableRow>
-                {['Logo', 'Nome', 'Cidade / UF', 'Taxa Admin', 'Min. Horas', 'Ações'].map(h => (
-                  <TableCell key={h} sx={{ fontWeight: 700, fontSize: 12, color: '#475569' }}>
+                <TableCell />
+                {['Hospital', 'Cidade / UF', 'Taxa admin', 'Mín. horas'].map(h => (
+                  <TableCell key={h} sx={{ fontWeight: 700, fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                     {h}
                   </TableCell>
                 ))}
+                <TableCell />
               </TableRow>
             </TableHead>
             <TableBody>
-              {hospitals.length === 0 ? (
+              {filteredHospitals.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    Nenhum hospital cadastrado
+                  <TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                    {search ? 'Nenhum hospital encontrado.' : 'Nenhum hospital vinculado a esta organização.'}
                   </TableCell>
                 </TableRow>
               ) : (
-                hospitals.map(h => (
-                  <TableRow key={h.id} hover>
-                    <TableCell>
-                      <Avatar src={h.logo_url} variant="rounded" sx={{ width: 36, height: 36 }} />
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 500 }}>{h.name}</TableCell>
-                    <TableCell>
-                      {[h.cidade, h.uf].filter(Boolean).join(' / ') || '—'}
-                    </TableCell>
-                    <TableCell>{h.adminFee != null ? `${h.adminFee}%` : '—'}</TableCell>
-                    <TableCell>{h.min_hours != null ? `${h.min_hours}h` : '—'}</TableCell>
-                    <TableCell>
-                      <Tooltip title="Ver detalhes">
-                        <IconButton
-                          size="small"
-                          sx={{ color: '#1a6b4a' }}
-                          onClick={() => navigate(`/hospitais/${h.id}`)}
-                        >
-                          <OpenInNewIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Editar">
-                        <IconButton size="small" onClick={() => openEdit(h)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Excluir">
-                        <IconButton
-                          size="small"
-                          sx={{ color: '#dc2626' }}
-                          onClick={() => setDeleteId(h.id)}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
+                filteredHospitals.map(h => (
+                  <HospitalRow
+                    key={h.id}
+                    hospital={h}
+                    onOpenDetail={() => navigate(`/hospitais/${h.id}`)}
+                    onEdit={() => openEdit(h)}
+                    onUnlink={() => setUnlinkItem(h)}
+                    onDelete={() => setDeleteItem(h)}
+                  />
                 ))
               )}
             </TableBody>
@@ -209,71 +394,253 @@ export default function Hospitals() {
         )}
       </Paper>
 
-      {/* Modal criar/editar */}
-      <Dialog open={drawerOpen} onClose={() => setDrawerOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle fontWeight={600}>
-          {mode === 'create' ? 'Novo Hospital' : 'Editar Hospital'}
+      {/* Modal Adicionar (Tabs: Vincular / Cadastrar) */}
+      <Dialog
+        open={addOpen}
+        onClose={() => !savingForm && !linkingId && setAddOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle fontWeight={700} sx={{ pb: 0 }}>
+          {editMode === 'edit' ? 'Editar hospital' : 'Adicionar hospital'}
         </DialogTitle>
-        <Divider />
-        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <TextField label="Nome do hospital" size="small" fullWidth {...field('name')} />
-          <Box display="flex" gap={2}>
-            <TextField label="Mín. horas" size="small" type="number" fullWidth {...field('min_hours')} />
-            <TextField label="Tolerância (min)" size="small" type="number" fullWidth {...field('min_tolerance')} />
-          </Box>
-          <Box display="flex" gap={2}>
-            <TextField label="Taxa admin (%)" size="small" type="number" fullWidth {...field('adminFee')} />
-            <TextField label="Imposto (%)" size="small" type="number" fullWidth {...field('tax')} />
-          </Box>
-          <TextField
-            label="CEP"
-            size="small"
-            fullWidth
-            {...field('cep')}
-            onBlur={getCep}
-          />
-          <TextField label="Rua" size="small" fullWidth {...field('logradouro')} />
-          <Box display="flex" gap={2}>
-            <TextField label="Número" size="small" fullWidth {...field('numero')} />
-            <TextField label="Complemento" size="small" fullWidth {...field('complemento')} />
-          </Box>
-          <TextField label="Bairro" size="small" fullWidth {...field('bairro')} />
-          <Box display="flex" gap={2}>
-            <TextField label="Cidade" size="small" fullWidth {...field('cidade')} />
-            <TextField label="UF" size="small" sx={{ maxWidth: 80 }} {...field('uf')} />
-          </Box>
+
+        {editMode === 'create' && (
+          <Tabs
+            value={addTab}
+            onChange={(_, v) => setAddTab(v)}
+            sx={{ px: 3, borderBottom: `1px solid ${C.border}` }}
+          >
+            <Tab
+              value="link"
+              label={(
+                <Box display="flex" alignItems="center" gap={1}>
+                  <LinkIcon sx={{ fontSize: 16 }} />
+                  <Typography fontSize={13} fontWeight={600}>Vincular existente</Typography>
+                </Box>
+              )}
+              sx={{ textTransform: 'none', minHeight: 48 }}
+            />
+            <Tab
+              value="create"
+              label={(
+                <Box display="flex" alignItems="center" gap={1}>
+                  <AddIcon sx={{ fontSize: 16 }} />
+                  <Typography fontSize={13} fontWeight={600}>Cadastrar novo</Typography>
+                </Box>
+              )}
+              sx={{ textTransform: 'none', minHeight: 48 }}
+            />
+          </Tabs>
+        )}
+
+        <DialogContent sx={{ pt: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {addTab === 'link' && editMode === 'create' && (
+            <>
+              <TextField
+                size="small"
+                fullWidth
+                placeholder="Buscar hospital..."
+                value={linkSearch}
+                onChange={e => setLinkSearch(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ fontSize: 18, color: C.textMuted }} />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Box sx={{ maxHeight: 360, overflowY: 'auto' }}>
+                {filteredAvailable.length === 0 ? (
+                  <Box textAlign="center" py={4}>
+                    <Typography fontSize={13} color="text.secondary">
+                      {linkSearch
+                        ? 'Nenhum hospital encontrado.'
+                        : 'Não há hospitais disponíveis para vincular.'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Stack spacing={1}>
+                    {filteredAvailable.map(h => (
+                      <Paper
+                        key={h.id}
+                        elevation={0}
+                        sx={{
+                          p: 1.5,
+                          border: `1px solid ${C.border}`,
+                          borderRadius: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                          transition: 'border-color 0.12s',
+                          '&:hover': { borderColor: brand.primary },
+                        }}
+                      >
+                        <Avatar
+                          src={h.logo_url}
+                          variant="rounded"
+                          sx={{ width: 32, height: 32, bgcolor: brand.primarySoft }}
+                        >
+                          <LocalHospitalIcon sx={{ color: brand.primary, fontSize: 16 }} />
+                        </Avatar>
+                        <Box flex={1} minWidth={0}>
+                          <Typography fontSize={13} fontWeight={600} noWrap>
+                            {h.name}
+                          </Typography>
+                          <Typography fontSize={11} color="text.secondary" noWrap>
+                            {[h.cidade, h.uf].filter(Boolean).join(' / ') || '—'}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={!!linkingId}
+                          onClick={() => handleLinkExisting(h.id)}
+                          startIcon={
+                            linkingId === h.id
+                              ? <CircularProgress size={12} />
+                              : <LinkIcon sx={{ fontSize: 14 }} />
+                          }
+                          sx={{
+                            borderColor: brand.primary,
+                            color: brand.primary,
+                            '&:hover': { borderColor: brand.primaryDark, bgcolor: brand.primarySoft },
+                          }}
+                        >
+                          Vincular
+                        </Button>
+                      </Paper>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+            </>
+          )}
+
+          {(addTab === 'create' || editMode === 'edit') && (
+            <>
+              <TextField label="Nome do hospital" size="small" fullWidth {...field('name')} autoFocus />
+              <Box display="flex" gap={2}>
+                <TextField label="Mín. horas" size="small" type="number" fullWidth {...field('min_hours')} />
+                <TextField label="Tolerância (min)" size="small" type="number" fullWidth {...field('min_tolerance')} />
+              </Box>
+              <Box display="flex" gap={2}>
+                <TextField label="Taxa admin (%)" size="small" type="number" fullWidth {...field('adminFee')} />
+                <TextField label="Imposto (%)" size="small" type="number" fullWidth {...field('tax')} />
+              </Box>
+              <TextField label="CEP" size="small" fullWidth {...field('cep')} onBlur={getCep} />
+              <TextField label="Rua" size="small" fullWidth {...field('logradouro')} />
+              <Box display="flex" gap={2}>
+                <TextField label="Número" size="small" fullWidth {...field('numero')} />
+                <TextField label="Complemento" size="small" fullWidth {...field('complemento')} />
+              </Box>
+              <TextField label="Bairro" size="small" fullWidth {...field('bairro')} />
+              <Box display="flex" gap={2}>
+                <TextField label="Cidade" size="small" fullWidth {...field('cidade')} />
+                <TextField label="UF" size="small" sx={{ maxWidth: 80 }} {...field('uf')} />
+              </Box>
+            </>
+          )}
         </DialogContent>
+
         <Divider />
         <DialogActions sx={{ px: 3, py: 1.5 }}>
-          <Button onClick={() => setDrawerOpen(false)}>Cancelar</Button>
+          <Button onClick={() => setAddOpen(false)} disabled={savingForm || !!linkingId}>
+            {addTab === 'link' && editMode === 'create' ? 'Fechar' : 'Cancelar'}
+          </Button>
+          {(addTab === 'create' || editMode === 'edit') && (
+            <Button
+              variant="contained"
+              onClick={handleSaveForm}
+              disabled={savingForm}
+              startIcon={savingForm ? <CircularProgress size={14} color="inherit" /> : undefined}
+            >
+              {editMode === 'edit' ? 'Salvar' : 'Cadastrar e vincular'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirmar desvincular */}
+      <Dialog open={!!unlinkItem} onClose={() => !unlinking && setUnlinkItem(null)} maxWidth="xs" fullWidth>
+        <DialogTitle fontWeight={700}>Desvincular hospital?</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Box display="flex" alignItems="center" gap={1.5} mb={2}>
+            <Avatar
+              src={unlinkItem?.logo_url}
+              variant="rounded"
+              sx={{ width: 36, height: 36, bgcolor: brand.primarySoft }}
+            >
+              <LocalHospitalIcon sx={{ color: brand.primary, fontSize: 18 }} />
+            </Avatar>
+            <Box>
+              <Typography fontSize={13} fontWeight={600}>
+                {unlinkItem?.name}
+              </Typography>
+              <Typography fontSize={11} color="text.secondary">
+                {[unlinkItem?.cidade, unlinkItem?.uf].filter(Boolean).join(' / ') || '—'}
+              </Typography>
+            </Box>
+          </Box>
+          <Typography fontSize={13} color="text.secondary">
+            O hospital deixará de aparecer nesta organização. Os dados não são apagados — outras organizações continuam tendo acesso e o vínculo pode ser refeito a qualquer momento.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setUnlinkItem(null)} disabled={unlinking}>Cancelar</Button>
           <Button
             variant="contained"
-            onClick={handleSave}
-            disabled={loading}
-            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : undefined}
+            color="warning"
+            onClick={handleUnlink}
+            disabled={unlinking}
+            startIcon={unlinking ? <CircularProgress size={14} color="inherit" /> : <LinkOffIcon sx={{ fontSize: 16 }} />}
           >
-            Salvar
+            Desvincular
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Confirmar exclusão */}
-      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)} maxWidth="xs">
-        <DialogTitle fontWeight={600}>Excluir hospital?</DialogTitle>
-        <DialogContent>
-          <Typography fontSize={14} color="text.secondary">
-            Essa ação é irreversível.
-          </Typography>
+      {/* Confirmar exclusão (cascata, mais grave) */}
+      <Dialog open={!!deleteItem} onClose={() => !deleting && setDeleteItem(null)} maxWidth="xs" fullWidth>
+        <DialogTitle fontWeight={700} sx={{ color: C.red }}>Excluir hospital?</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Box display="flex" alignItems="center" gap={1.5} mb={2}>
+            <Avatar
+              src={deleteItem?.logo_url}
+              variant="rounded"
+              sx={{ width: 36, height: 36, bgcolor: C.redSoft }}
+            >
+              <LocalHospitalIcon sx={{ color: C.red, fontSize: 18 }} />
+            </Avatar>
+            <Box>
+              <Typography fontSize={13} fontWeight={600}>
+                {deleteItem?.name}
+              </Typography>
+              <Typography fontSize={11} color="text.secondary">
+                {[deleteItem?.cidade, deleteItem?.uf].filter(Boolean).join(' / ') || '—'}
+              </Typography>
+            </Box>
+          </Box>
+          <Box sx={{ p: 1.5, bgcolor: C.redSoft, borderRadius: 2, border: `1px solid #fecaca` }}>
+            <Typography fontSize={12} color={C.red} fontWeight={600} mb={0.5}>
+              ⚠️ Ação irreversível
+            </Typography>
+            <Typography fontSize={12} color="text.secondary">
+              O hospital será removido do sistema, junto com todos os plantões, médicos vinculados e dados financeiros. <strong>Outras organizações também perderão acesso.</strong> Para apenas remover desta organização, use <strong>Desvincular</strong>.
+            </Typography>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteId(null)}>Cancelar</Button>
+          <Button onClick={() => setDeleteItem(null)} disabled={deleting}>Cancelar</Button>
           <Button
             variant="contained"
             color="error"
             onClick={handleDelete}
-            disabled={loading}
+            disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : undefined}
           >
-            Excluir
+            Excluir definitivamente
           </Button>
         </DialogActions>
       </Dialog>
