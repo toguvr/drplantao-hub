@@ -27,8 +27,13 @@ export default function Login() {
     try {
       await signIn({ email, password });
       navigate('/');
-    } catch {
-      toast.error('E-mail ou senha incorretos.');
+    } catch (err: any) {
+      // Mensagem propagada do AuthContext (ex: sem userEnterprise) ou erro genérico
+      const apiMsg = err?.response?.data?.message;
+      const localMsg = typeof err?.message === 'string' && !err?.response
+        ? err.message
+        : null;
+      toast.error(apiMsg || localMsg || 'E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
     }
